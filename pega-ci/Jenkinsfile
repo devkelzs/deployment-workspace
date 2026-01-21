@@ -1,0 +1,70 @@
+pipeline {
+  agent any
+
+  environment {
+    APP_NAME = "pega-customer"
+    VERSION = "1.0.0"
+    JFROG_URL = "https://<your-name>.jfrog.io"
+    ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
+  }
+
+  stages {
+
+    stage('Download Artifact from JFrog') {
+      steps {
+        withCredentials([string(credentialsId: 'JFROG_TOKEN', variable: 'JFROG_TOKEN')]) {
+          sh """
+            wget --header="Authorization: Bearer $JFROG_TOKEN" \
+                 -O Customer_${VERSION}.zip \
+                 $JFROG_URL/artifactory/pega-rules/${APP_NAME}/${VERSION}/Customer_010101_20260121T152131_GMT.zip
+          """
+        }
+      }
+    }
+
+    stage(' Unzip Artifact for Inspection') {
+      steps {
+        sh """
+          echo "Unzipping artifact to check contents..."
+          unzip -l Customer_${VERSION}.zip
+        """
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh """
+          docker build \
+          -t ${APP_NAME}:${VERSION} .
+        """
+      }
+    }
+
+    stage('Authenticate to ECR') {
+      steps {
+        sh """
+          aws ecr get-login-password --region ${AWS_REGION} | \
+          docker login --username AWS --password-stdin ${ECR_REGISTRY}
+        """
+      }
+    }
+
+    stage('Push Image to ECR') {
+      steps {
+        sh """
+          docker tag ${APP_NAME}:${VERSION} ${ECR_REPO}:${VERSION}
+          docker push ${ECR_REPO}:${VERSION}
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Image ${APP_NAME}:${VERSION} successfully built and pushed"
+    }
+    failure {
+      echo "Pipeline failed — investigate immediately"
+    }
+  }
+}

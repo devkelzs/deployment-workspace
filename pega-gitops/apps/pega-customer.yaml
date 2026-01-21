@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pega-customer
+  namespace: argocd
+spec:
+  project: default
+
+  # Source of the Helm chart
+  source:
+    repoURL: "https://github.com/your-org/pega-helm.git"
+    targetRevision: "main"
+    path: ""
+    helm:
+      valueFiles:
+        - values.yaml
+
+  # Destination Kubernetes cluster and namespace
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: pega
+
+  # Sync options
+  syncPolicy:
+    automated:
+      prune: true          # remove resources no longer in Helm chart
+      selfHeal: true       # auto-correct drift
+    syncOptions:
+      - CreateNamespace=true
