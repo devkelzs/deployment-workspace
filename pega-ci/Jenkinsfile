@@ -4,7 +4,7 @@ pipeline {
   environment {
     APP_NAME = "pega-customer"
     VERSION = "1.0.0"
-    JFROG_URL = "https://<your-name>.jfrog.io"
+    JFROG_URL = "https://trialm3fa23.jfrog.io"
     ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
     HELM_CHART = "./pega-helm"
     GITOPS_REPO = "~/deployment-workspace/pega-gitops"
