@@ -16,8 +16,8 @@ pipeline {
         withCredentials([string(credentialsId: 'JFROG_TOKEN', variable: 'JFROG_TOKEN')]) {
           sh """
             wget --header="Authorization: Bearer $JFROG_TOKEN" \
-                 -O Customer_${VERSION}.zip \
-                 $JFROG_URL/artifactory/pega-rules/${APP_NAME}/${VERSION}/Customer_010101_20260121T152131_GMT.zip
+             -O Customer_010101_20260121T152131_GMT.zip \
+             https://trialm3fa23.jfrog.io/artifactory/pega-rules/Customer_010101_20260121T152131_GMT.zip
           """
         }
       }
