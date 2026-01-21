@@ -1,101 +1,95 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    APP_NAME = "pega-customer"
-    VERSION = "1.0.0"
-    JFROG_URL = "https://trialm3fa23.jfrog.io"
-    ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
-    HELM_CHART = "./pega-helm"
-    GITOPS_REPO = "~/deployment-workspace/pega-gitops"
-  }
+    environment {
+        APP_NAME = "pega-customer"
+        VERSION = "1.0.0"
+        JFROG_URL = "https://trialm3fa23.jfrog.io"
+        ECR_REGISTRY = "775698064045.dkr.ecr.us-east-1.amazonaws.com"  
+        ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
+        HELM_CHART = "./pega-helm"
+        GITOPS_REPO = "~/deployment-workspace/pega-gitops"
+    }
 
-  stages {
-    stage('Download Artifact from JFrog') {
-      steps {
-        withCredentials([string(credentialsId: 'JFROG_TOKEN', variable: 'JFROG_TOKEN')]) {
-          sh """
-            wget --header="Authorization: Bearer $JFROG_TOKEN" \
-             -O Customer_1.0.0.zip \
-             https://trialm3fa23.jfrog.io/artifactory/pega-rules/Customer_010101_20260121T152131_GMT.zip
-          """
+    stages {
+
+        stage('Checkout SCM') {
+            steps {
+                git url: 'https://github.com/devkelzs/deployment-workspace.git', branch: 'main'
+            }
         }
-      }
+
+        stage('Download Artifact from JFrog') {
+            steps {
+                withCredentials([string(credentialsId: 'JFROG_TOKEN', variable: 'JFROG_TOKEN')]) {
+                    sh '''
+                        # Download the Pega artifact from JFrog
+                        wget --header="Authorization: Bearer $JFROG_TOKEN" \
+                             -O Customer_${VERSION}.zip \
+                             ${JFROG_URL}/artifactory/pega-rules/Customer_010101_20260121T152131_GMT.zip
+                    '''
+                }
+            }
+        }
+
+        stage('Unzip Artifact') {
+            steps {
+                sh '''
+                    # Make sure docker folder exists
+                    mkdir -p pega-docker
+
+                    # Unzip the artifact into the docker build context
+                    unzip -o Customer_${VERSION}.zip -d ./pega-docker/
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    docker build -t ${APP_NAME}:${VERSION} ./pega-docker
+                '''
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                    sh '''
+                        # Authenticate Docker to ECR
+                        aws ecr get-login-password --region us-east-1 | \
+                            docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+                        # Tag and push image
+                        docker tag ${APP_NAME}:${VERSION} ${ECR_REPO}:${VERSION}
+                        docker push ${ECR_REPO}:${VERSION}
+                    '''
+                }
+            }
+        }
+
+        stage('Helm Deploy') {
+            steps {
+                sh '''
+                    # Create namespace if it doesn't exist
+                    kubectl create namespace pega || true
+
+                    # Deploy using Helm chart
+                    helm upgrade --install ${APP_NAME} ${HELM_CHART} \
+                        --namespace pega \
+                        --set image.tag=${VERSION}
+                '''
+            }
+        }
+
     }
 
-    stage('Unzip Artifact') {
-      steps {
-        sh "unzip -o Customer_1.0.0.zip -d ./pega-docker/
-"
-      }
+    post {
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed — check the logs and fix errors."
+        }
     }
-
-    stage('Build Docker Image') {
-      steps {
-        sh """
-          eval \$(minikube docker-env)
-          docker build -t ${APP_NAME}:${VERSION} ./pega-docker
-        """
-      }
-    }
-
-    stage('Push Image to ECR') {
-      when { expression { env.ECR_REGISTRY != null } }
-      steps {
-        sh """
-          docker tag ${APP_NAME}:${VERSION} ${ECR_REPO}:${VERSION}
-          aws ecr get-login-password --region ${AWS_REGION} | \
-          docker login --username AWS --password-stdin ${ECR_REGISTRY}
-          docker push ${ECR_REPO}:${VERSION}
-        """
-      }
-    }
-
-    stage('Update GitOps Helm Values') {
-      steps {
-        sh """
-          cd ${GITOPS_REPO}
-          yq e '.image.tag="${VERSION}"' -i values.yaml
-          git add values.yaml
-          git commit -m "Update Pega Customer image to ${VERSION}"
-          git push origin main
-        """
-      }
-    }
-
-    stage('Helm Deploy') {
-      steps {
-        sh """
-          helm upgrade --install ${APP_NAME} ${HELM_CHART} \
-            --namespace pega \
-            --set image.tag=${VERSION}
-        """
-      }
-    }
-
-    stage('Validate Deployment') {
-      steps {
-        sh """
-          kubectl rollout status deployment/${APP_NAME} -n pega
-          kubectl get pods -n pega
-          kubectl logs deployment/${APP_NAME} -n pega | grep "Pega Customer App started successfully"
-        """
-      }
-    }
-
-    stage('Optional Port-Forward Test') {
-      steps {
-        sh """
-          kubectl port-forward svc/${APP_NAME} 8080:8080 -n pega &
-          sleep 5
-          curl -s http://localhost:8080/
-        """
-      }
-    }
-  }
-
-  post {
-    success { echo "✅ ${APP_NAME}:${VERSION} deployed successfully!" }
-    failure { echo "❌ Pipeline failed — check logs and debug immediately." }
-  }
 }
