@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/pega-customer
+  repository: 775698064045.dkr.ecr.us-east-1.amazonaws.com/pega-customer
   tag: "1.0.0"
   pullPolicy: IfNotPresent
 

@@ -8,7 +8,7 @@ spec:
 
   # Source of the Helm chart
   source:
-    repoURL: "https://github.com/your-org/pega-helm.git"
+    repoURL: "https://github.com/devkelzs/deployment-workspace/tree/main/pega-helm.git"
     targetRevision: "main"
     path: ""
     helm:
