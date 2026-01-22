@@ -46,8 +46,11 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker build -t ${APP_NAME}:${VERSION} ./pega-docker
+                sh '''echo "Building Docker image..."
+                      docker build \
+                        -t pega-customer:${VERSION} \
+                        -f pega-ci/pega-docker/Dockerfile \
+                         pega-ci/pega-docker
                 '''
             }
         }
