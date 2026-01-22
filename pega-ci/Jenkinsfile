@@ -2,16 +2,13 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME       = "pega-customer"
-        VERSION        = "1.0.0"
-        JFROG_URL      = "https://trialm3fa23.jfrog.io"
-        AWS_REGION     = "us-east-1"
-        AWS_ACCOUNT_ID = "775698064045"
-        ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-        ECR_REPO       = "${ECR_REGISTRY}/${APP_NAME}"
-        HELM_CHART     = "./pega-helm"          // <-- kept exactly as your original
-        GITOPS_REPO    = "~/deployment-workspace/pega-gitops"
-        K8S_NAMESPACE  = "pega"
+        APP_NAME = "pega-customer"
+        VERSION = "1.0.0"
+        JFROG_URL = "https://trialm3fa23.jfrog.io"
+        ECR_REGISTRY = "775698064045.dkr.ecr.us-east-1.amazonaws.com"  
+        ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
+        HELM_CHART = "./pega-helm"
+        GITOPS_REPO = "~/deployment-workspace/pega-gitops"
     }
 
     stages {
@@ -26,6 +23,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'JFROG_TOKEN', variable: 'JFROG_TOKEN')]) {
                     sh '''
+                        # Download the Pega artifact from JFrog
                         wget --header="Authorization: Bearer $JFROG_TOKEN" \
                              -O Customer_${VERSION}.zip \
                              ${JFROG_URL}/artifactory/pega-rules/Customer_010101_20260121T152131_GMT.zip
@@ -37,30 +35,36 @@ pipeline {
         stage('Unzip Artifact') {
             steps {
                 sh '''
+                    # Make sure docker folder exists
                     mkdir -p pega-docker
-                    unzip -o Customer_${VERSION}.zip -d pega-docker/
+
+                    # Unzip the artifact into the docker build context
+                    unzip -o Customer_${VERSION}.zip -d ./pega-docker/
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker build \
-                        -t ${APP_NAME}:${VERSION} \
-                        -f pega-docker/Dockerfile \
-                        pega-docker
+                sh '''echo "Building Docker image..."
+                      docker build \
+                        -t pega-customer:${VERSION} \
+                        -f pega-ci/pega-docker/Dockerfile \
+                         pega-ci/pega-docker
+
                 '''
             }
         }
 
         stage('Push Image to ECR') {
             steps {
-                withAWS(credentials: 'aws-creds', region: "${AWS_REGION}") {
+                withAWS(credentials: 'aws-creds', region: 'us-east-1') {
                     sh '''
-                        aws ecr get-login-password --region ${AWS_REGION} \
-                            | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        # Authenticate Docker to ECR
+                        aws ecr get-login-password --region us-east-1 | \
+                            docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
+                        # Tag and push image
                         docker tag ${APP_NAME}:${VERSION} ${ECR_REPO}:${VERSION}
                         docker push ${ECR_REPO}:${VERSION}
                     '''
@@ -71,11 +75,12 @@ pipeline {
         stage('Helm Deploy') {
             steps {
                 sh '''
-                    kubectl create namespace ${K8S_NAMESPACE} || true
+                    # Create namespace if it doesn't exist
+                    kubectl create namespace pega || true
 
+                    # Deploy using Helm chart
                     helm upgrade --install ${APP_NAME} ${HELM_CHART} \
-                        --namespace ${K8S_NAMESPACE} \
-                        --set image.repository=${ECR_REPO} \
+                        --namespace pega \
                         --set image.tag=${VERSION}
                 '''
             }
@@ -88,7 +93,7 @@ pipeline {
             echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo "❌ Pipeline failed — check logs for details."
+            echo "❌ Pipeline failed — check the logs and fix errors."
         }
     }
 }
